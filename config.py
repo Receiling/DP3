@@ -38,6 +38,10 @@ class BaseConfigurator(object):
         return self._config.get('Data', 'event_index_file')
 
     @property
+    def MIN_EVENT_INTERVAL(self):
+        return self._config.getfloat('Data', 'min_event_interval')
+
+    @property
     def MIN_LENGTH(self):
         return self._config.getint('Data', 'min_length')
 
@@ -142,6 +146,10 @@ class BaseConfigurator(object):
         return self._config.getint('Run', 'test_batch_size')
 
     @property
+    def EPOCH_THRESHOLD(self):
+        return self._config.getint('Run', 'epoch_threshold')
+
+    @property
     def PYTORCH_SEED(self):
         return self._config.getint('Pytorch', 'pytorch_seed')
 
@@ -188,8 +196,16 @@ class ERPPConfigurator(BaseConfigurator):
         return self._config.getint('Network', 'rnn_layers')
 
     @property
+    def MLP_DIM(self):
+        return self._config.getint('Network', 'mlp_dim')
+
+    @property
     def LEARNING_RATE(self):
         return self._config.getfloat('Optimizer', 'learning_rate')
+
+    @property
+    def EPS(self):
+        return self._config.getfloat('Optimizer', 'eps')
 
     @property
     def ADAM_BETA1(self):
@@ -202,6 +218,10 @@ class ERPPConfigurator(BaseConfigurator):
     @property
     def WEIGHT_DECAY(self):
         return self._config.getfloat('Optimizer', 'weight_decay')
+
+    @property
+    def LOSS_ALPHA(self):
+        return self._config.getfloat('Loss', 'loss_alpha')
 
 
 class AERPPConfigurator(BaseConfigurator):
@@ -250,8 +270,16 @@ class AERPPConfigurator(BaseConfigurator):
         return self._config.getfloat('Network', 'threshold')
 
     @property
+    def MLP_DIM(self):
+        return self._config.getint('Network', 'mlp_dim')
+
+    @property
     def LEARNING_RATE(self):
         return self._config.getfloat('Optimizer', 'learning_rate')
+
+    @property
+    def EPS(self):
+        return self._config.getfloat('Optimizer', 'eps')
 
     @property
     def ADAM_BETA1(self):
@@ -264,6 +292,10 @@ class AERPPConfigurator(BaseConfigurator):
     @property
     def WEIGHT_DECAY(self):
         return self._config.getfloat('Optimizer', 'weight_decay')
+
+    @property
+    def LOSS_ALPHA(self):
+        return self._config.getfloat('Loss', 'loss_alpha')
 
 
 class RMTPPConfigurator(BaseConfigurator):
@@ -308,8 +340,16 @@ class RMTPPConfigurator(BaseConfigurator):
         return self._config.getint('Network', 'rnn_layers')
 
     @property
+    def MLP_DIM(self):
+        return self._config.getint('Network', 'mlp_dim')
+
+    @property
     def LEARNING_RATE(self):
         return self._config.getfloat('Optimizer', 'learning_rate')
+
+    @property
+    def EPS(self):
+        return self._config.getfloat('Optimizer', 'eps')
 
     @property
     def ADAM_BETA1(self):
@@ -322,6 +362,10 @@ class RMTPPConfigurator(BaseConfigurator):
     @property
     def WEIGHT_DECAY(self):
         return self._config.getfloat('Optimizer', 'weight_decay')
+
+    @property
+    def LOSS_ALPHA(self):
+        return self._config.getfloat('Loss', 'loss_alpha')
 
 
 class ARMTPPConfigurator(BaseConfigurator):
@@ -370,8 +414,16 @@ class ARMTPPConfigurator(BaseConfigurator):
         return self._config.getfloat('Network', 'threshold')
 
     @property
+    def MLP_DIM(self):
+        return self._config.getint('Network', 'mlp_dim')
+
+    @property
     def LEARNING_RATE(self):
         return self._config.getfloat('Optimizer', 'learning_rate')
+
+    @property
+    def EPS(self):
+        return self._config.getfloat('Optimizer', 'eps')
 
     @property
     def ADAM_BETA1(self):
@@ -384,3 +436,7 @@ class ARMTPPConfigurator(BaseConfigurator):
     @property
     def WEIGHT_DECAY(self):
         return self._config.getfloat('Optimizer', 'weight_decay')
+
+    @property
+    def LOSS_ALPHA(self):
+        return self._config.getfloat('Loss', 'loss_alpha')

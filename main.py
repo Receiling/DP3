@@ -5,7 +5,7 @@ from config import ERPPConfigurator, AERPPConfigurator, RMTPPConfigurator, ARMTP
 import numpy as np
 from scipy import integrate
 import torch
-from utils.preprocess import load_sequences, dataset_statistic, generate_time_sequence, generate_event_sequence
+from utils.preprocess import load_sequences, dataset_statistic, generate_time_sequence, generate_event_sequence, generate_sequence
 from utils.batch_iterator import PaddedBatchIterator
 import models
 
@@ -29,6 +29,10 @@ def main():
     elif args.model == 'ARMTPP':
         cfg = ARMTPPConfigurator(args.config_file, extra_args)
 
+    # TODO:loging module
+    #  设置log_file后记录所有训练输出
+    #  初步是log_file由modelname+datasetname+timestap构成
+    #  保证输出到日志同时打印到console
     # logger = logging.getLogger(args.model)
     # logger.setLevel(level=print)
     # handler = logging.FileHandler(cfg.LOG_FILE)
@@ -62,12 +66,17 @@ def statistic(cfg, args, extra_args):
 def preprocessing(cfg, args, extra_args):
     print('preprocessing starting...')
     domain_dict = ast.literal_eval(cfg.DOMAIN_DICT)
-    generate_time_sequence(cfg.CSV_FILE, domain_dict, cfg.TIME_FILE,
-                           cfg.TRAIN_TIME_FILE, cfg.DEV_TIME_FILE,
-                           train_rate=cfg.TRAIN_RATE, min_length=cfg.MIN_LENGTH, max_length=cfg.MAX_LENGTH)
-    generate_event_sequence(cfg.CSV_FILE, domain_dict, cfg.EVENT_FILE, cfg.TRAIN_EVENT_FILE, cfg.DEV_EVENT_FILE,
-                            cfg.EVENT_INDEX_FILE, train_rate=cfg.TRAIN_RATE,
-                            min_length=cfg.MIN_LENGTH, max_length=cfg.MAX_LENGTH)
+    # generate_time_sequence(cfg.CSV_FILE, domain_dict, cfg.TIME_FILE,
+    #                        cfg.TRAIN_TIME_FILE, cfg.DEV_TIME_FILE,
+    #                        train_rate=cfg.TRAIN_RATE, min_length=cfg.MIN_LENGTH, max_length=cfg.MAX_LENGTH)
+    # generate_event_sequence(cfg.CSV_FILE, domain_dict, cfg.EVENT_FILE, cfg.TRAIN_EVENT_FILE, cfg.DEV_EVENT_FILE,
+    #                         cfg.EVENT_INDEX_FILE, train_rate=cfg.TRAIN_RATE,
+    #                         min_length=cfg.MIN_LENGTH, max_length=cfg.MAX_LENGTH)
+    generate_sequence(cfg.CSV_FILE, domain_dict,
+                      cfg.TIME_FILE, cfg.TRAIN_TIME_FILE, cfg.DEV_TIME_FILE,
+                      cfg.EVENT_FILE, cfg.TRAIN_EVENT_FILE, cfg.DEV_EVENT_FILE,
+                      cfg.EVENT_INDEX_FILE, train_rate=cfg.TRAIN_RATE,
+                      min_length=cfg.MIN_LENGTH, max_length=cfg.MAX_LENGTH, min_event_interval=cfg.MIN_EVENT_INTERVAL)
     print('preprocessing finished.')
 
 
@@ -101,30 +110,39 @@ def training(cfg, args, extra_args):
     citeration = getattr(models, args.model+'Loss')(cfg, args)
 
     # optimizer
-    model_optimizer = torch.optim.Adam(model.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.ADAM_BETA1, cfg.ADAM_BETA2),
-                                 weight_decay=cfg.WEIGHT_DECAY)
-    citeration_optimizer = torch.optim.Adam(citeration.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.ADAM_BETA1, cfg.ADAM_BETA2),
-                                 weight_decay=cfg.WEIGHT_DECAY)
+    # model_optimizer = torch.optim.Adam(model.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.ADAM_BETA1, cfg.ADAM_BETA2), weight_decay=cfg.WEIGHT_DECAY)
+    # citeration_optimizer = torch.optim.Adam(citeration.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.ADAM_BETA1, cfg.ADAM_BETA2), weight_decay=cfg.WEIGHT_DECAY)
+    model_optimizer = torch.optim.RMSprop(model.parameters(), lr=cfg.LEARNING_RATE, eps=cfg.EPS)
+    model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer, step_size=30, gamma=0.1)
+    if cfg.SAVE_LAST_TIME:
+        citeration_optimizer = torch.optim.RMSprop(citeration.parameters(), lr=cfg.LEARNING_RATE, eps=cfg.EPS)
+        citeration_scheduler = torch.optim.lr_scheduler.StepLR(citeration_optimizer, step_size=30, gamma=0.1)
+
     # meters
     loss_meter = []
+    max_event_f1 = None
+    max_event_precision = None
+    max_event_recall = None
     max_event_acc = None
-    max_event_acc_epoch = None
     min_time_loss = None
+    epoch_cnt = 0
 
     for epoch in range(cfg.EPOCHS):
         model.train()
+        model_scheduler.step()
+        if cfg.SAVE_LAST_TIME: citeration_scheduler.step()
         train_batch_iterator.shuffle()
         batch_id = 1
         while True:
             end, input, target, last_time, length = train_batch_iterator.next_batch(cfg.TRAIN_BATCH_SIZE)
             model_optimizer.zero_grad()
-            citeration_optimizer.zero_grad()
+            if cfg.SAVE_LAST_TIME: citeration_optimizer.zero_grad()
             output = model.forward(input, length)
             batch_loss = citeration(output, target)
             loss_meter.append(batch_loss[2].item())
             batch_loss[2].backward()
             model_optimizer.step()
-            citeration_optimizer.step()
+            if cfg.SAVE_LAST_TIME: citeration_optimizer.step()
             if batch_id % cfg.TRAIN_PRINT_FREQ == 0:
                 print("epoch: %d\tbatch_id:%d\tloss:%f\ttime loss: %f\tevent loss: %f" %
                              (epoch, batch_id, np.array(loss_meter).mean(), batch_loss[0].item(), batch_loss[1].item()))
@@ -135,20 +153,29 @@ def training(cfg, args, extra_args):
         model.eval()
         with torch.no_grad():
             event_total = 0
-            event_acc = 0
+            all_cnt = np.zeros(cfg.EVENT_CLASSES)
+            acc_cnt = np.zeros(cfg.EVENT_CLASSES)
+            pre_cnt = np.zeros(cfg.EVENT_CLASSES)
             time_error = 0
             dev_batch_iterator.shuffle()
             while True:
                 end, input, target, last_time, length = dev_batch_iterator.next_batch(cfg.DEV_BATCH_SIZE)
                 output = model.forward(input, length)
-                event_output = torch.argmax(output[1], dim=1)
-                event_target = torch.tensor(target[:, 1], dtype=torch.long, device=args.device)
                 event_total += length.shape[0]
-                event_acc += (event_output == event_target).sum().item()
+
+                event_output = output[1].cpu().numpy()
+                event_output = np.argmax(event_output, axis=1).astype(int)
+                event_target = target[:, 1].astype(int)
+                for idx in range(event_target.shape[0]):
+                    all_cnt[event_target[idx]] += 1
+                    pre_cnt[event_output[idx]] += 1
+                    if event_output[idx] == event_target[idx]:
+                        acc_cnt[event_output[idx]] += 1
 
                 if last_time is None:
-                    time_target = torch.tensor(target[:, 0], dtype=torch.float, device=args.device)
-                    time_error += torch.abs(output[0].squeeze() - time_target).sum().item()
+                    time_output = output[0].squeeze().cpu().numpy()
+                    time_target = target[:, 0]
+                    time_error += np.abs(time_output - time_target).sum()
                 else:
                     time_target = target[:,  0]
                     history_event = output[0].squeeze().cpu().numpy()
@@ -160,20 +187,67 @@ def training(cfg, args, extra_args):
                                  for idx in range(history_event.shape[0])])
                     time_error += np.abs(next_time - last_time - time_target).sum()
                 if end: break
-            print("epoch: %d\tevent_acc: %f\ttime_error: %f" %
-                  (epoch, event_acc / event_total, time_error / event_total))
+            print(acc_cnt, acc_cnt.sum())
+            print(pre_cnt, pre_cnt.sum())
+            print(all_cnt, all_cnt.sum())
+            cnt = 0
+            score = 0.0
+            for idx in range(cfg.EVENT_CLASSES):
+                if all_cnt[idx] != 0:
+                    cnt += 1
+                    score += acc_cnt[idx] / all_cnt[idx]
+            event_recall = score / cnt
+            cnt = 0
+            score = 0.0
+            for idx in range(cfg.EVENT_CLASSES):
+                if pre_cnt[idx] != 0:
+                    cnt += 1
+                    score += acc_cnt[idx] / pre_cnt[idx]
+            event_precision = score / cnt
+            cnt = 0
+            score = 0.0
+            for idx in range(cfg.EVENT_CLASSES):
+                if all_cnt[idx] != 0 and pre_cnt[idx] != 0:
+                    cnt += 1
+                    precision = acc_cnt[idx] / pre_cnt[idx]
+                    recall = acc_cnt[idx] / all_cnt[idx]
+                    score += ((2 * precision * recall) / (precision + recall))
+            event_f1 = score / cnt
+            event_acc = acc_cnt.sum() / all_cnt.sum()
+            print("epoch: %d\tevent_recall: %f\tevent_precision: %f\tevent_f1: %f\ttime_error: %f" %
+                  (epoch, event_recall, event_precision, event_f1, time_error / event_total))
             print("-------------------------------------------------------------------------------------")
-            if max_event_acc is None or event_acc / event_total > max_event_acc:
-                max_event_acc = event_acc / event_total
-                max_event_acc_epoch = epoch
-                torch.save({'epoch': epoch,
-                            'model_state_dict': model.state_dict(),
-                            'model_optimizer_state_dict': model_optimizer.state_dict(),
-                            'citeration_optimizer_state_dict': citeration_optimizer.state_dict(),
-                            'citeration': citeration.state_dict()}, cfg.BEST_MODEL)
+
+            if max_event_f1 is None or event_f1 > max_event_f1:
+                max_event_f1 = event_f1
+                best_model = {'epoch': epoch, 'precision': event_precision, 'recall': event_recall, 'f1': event_f1}
+                epoch_cnt = 0
+                # torch.save({'epoch': epoch,
+                #             'model_state_dict': model.state_dict(),
+                #             'model_optimizer_state_dict': model_optimizer.state_dict(),
+                #             # 'citeration_optimizer_state_dict': citeration_optimizer.state_dict(),
+                #             'citeration': citeration.state_dict()}, cfg.BEST_MODEL)
+            else:
+                epoch_cnt += 1
+
+            if max_event_precision is None or event_precision > max_event_precision:
+                max_event_precision = event_precision
+
+            if max_event_recall is None or event_recall > max_event_recall:
+                max_event_recall = event_recall
+
             if min_time_loss is None or time_error / event_total < min_time_loss:
                 min_time_loss = time_error / event_total
-    print("best model: epoch: %d\tevent_acc: %f\ttime_loss: %f" % (max_event_acc_epoch, max_event_acc, min_time_loss))
+
+            if max_event_acc is None or event_acc > max_event_acc:
+                max_event_acc = event_acc
+
+            if epoch_cnt > cfg.EPOCH_THRESHOLD:
+                break
+
+    print('best model:', best_model)
+    print("max_event_precision: %f\tmax_event_recall: %f\tmax_event_acc: %f\tmin_time_loss: %f" %
+          (max_event_precision, max_event_recall, max_event_acc, min_time_loss))
     print('training finished.')
 
 
@@ -184,3 +258,12 @@ def testing(cfg, args, extra_args):
 
 if __name__ == '__main__':
     main()
+
+# TODO:模型的保存和continue training
+# TODO:将configs分开
+
+'''
+Linkedin:
+ERPP 16.7% 1.20
+
+'''

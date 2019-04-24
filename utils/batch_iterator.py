@@ -29,13 +29,29 @@ class PaddedBatchIterator(object):
         max_length = max(length)
         last_time_sequence = None
         if self.save_last_time:
-            last_time_sequence = np.array([sequence[-2][0] for sequence in sequences])
+            if self.diff is True:
+                last_time_sequence = np.array([sequence[-2][0] - sequence[0][0] for sequence in sequences])
+            else:
+                # accumulate time
+                last_time_sequence = []
+                for sequence in sequences:
+                    time = 0
+                    for item in sequence[:-1]:
+                        time += item[0]
+                    last_time_sequence.append(time)
+                last_time_sequence = np.array(last_time_sequence)
         if self.mark is True:
             batch_sequences = np.zeros([batch_size, max_length, 2], dtype=np.float32)
-            target = np.array([[sequence[-1][0] - sequence[-2][0], sequence[-1][1]] for sequence in sequences])
+            if self.diff:
+                target = np.array([[sequence[-1][0] - sequence[-2][0], sequence[-1][1]] for sequence in sequences])
+            else:
+                target = np.array([[sequence[-1][0], sequence[-1][1]] for sequence in sequences])
         else:
             batch_sequences = np.zeros([batch_size, max_length, 1], dtype=np.float32)
-            target = np.array([[sequence[-1][0] - sequence[-2][0]] for sequence in sequences])
+            if self.diff:
+                target = np.array([[sequence[-1][0] - sequence[-2][0]] for sequence in sequences])
+            else:
+                target = np.array([[sequence[-1][0], sequence[-1][1]] for sequence in sequences])
         for idx, batch_sequence in enumerate(batch_sequences):
             if self.mark is True:
                 batch_sequence[:length[idx], :] = sequences[idx][:-1]
@@ -57,10 +73,10 @@ class PaddedBatchIterator(object):
 
 
 if __name__ == '__main__':
-    time_sequences_file = '../data/real/linkedin/time.txt'
-    event_sequences_file = '../data/real/linkedin/event.txt'
+    time_sequences_file = '../data/real/ATM/dev_time.txt'
+    event_sequences_file = '../data/real/ATM/dev_event.txt'
     sequences = load_sequences(time_sequences_file, event_sequences_file)
-    data_batch_iterator = PaddedBatchIterator(sequences, True, True)
+    data_batch_iterator = PaddedBatchIterator(sequences, True, False, True)
     data_batch_iterator.shuffle()
     batch_size = 10
     print(data_batch_iterator.next_batch(batch_size))

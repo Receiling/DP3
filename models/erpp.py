@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import pickle
 import numpy as np
 
@@ -9,19 +10,27 @@ class ERPP(nn.Module):
         super(ERPP, self).__init__()
         self.cfg = cfg
         self.args = args
-        self.embedding = nn.Embedding(self.cfg.EVENT_CLASSES, self.cfg.EMB_DIM)
-        self.dropout = nn.Dropout(self.cfg.EMB_DROPOUT)
-        self.lstm = nn.LSTM(self.cfg.EMB_DIM + 1, self.cfg.RNN_HIDDEN_DIM, self.cfg.RNN_LAYERS)
-        self.event_linear = nn.Linear(self.cfg.RNN_HIDDEN_DIM, self.cfg.EVENT_CLASSES)
-        self.log_softmax = nn.LogSoftmax(dim=1)
-        self.time_linear = nn.Linear(self.cfg.RNN_HIDDEN_DIM, 1)
+        if self.cfg.EMB_DIM != 0:
+            self.embedding = nn.Embedding(self.cfg.EVENT_CLASSES, self.cfg.EMB_DIM)
+            self.dropout = nn.Dropout(self.cfg.EMB_DROPOUT)
+            self.lstm = nn.LSTM(self.cfg.EMB_DIM + 1, self.cfg.RNN_HIDDEN_DIM, self.cfg.RNN_LAYERS)
+        else:
+            self.lstm = nn.LSTM(self.cfg.EVENT_CLASSES + 1, self.cfg.RNN_HIDDEN_DIM, self.cfg.RNN_LAYERS)
+        self.mlp = nn.Linear(self.cfg.RNN_HIDDEN_DIM, self.cfg.MLP_DIM)
+        self.event_linear = nn.Linear(self.cfg.MLP_DIM, self.cfg.EVENT_CLASSES)
+        self.time_linear = nn.Linear(self.cfg.MLP_DIM, 1)
 
     def forward(self, input, length):
-        time_sequences = torch.tensor(input[:, :, 0], dtype=torch.float, device=self.args.device)
-        event_sequences = torch.tensor(input[:, :, 1], dtype=torch.long, device=self.args.device)
-        event_embedding = self.embedding(event_sequences)
-        event_embedding_dropout = self.dropout(event_embedding)
-        time_event_input = torch.cat((time_sequences.unsqueeze(2), event_embedding_dropout), 2)
+        time_sequences = torch.tensor(input[:, :, 0:1], dtype=torch.float, device=self.args.device)
+        event_sequences = torch.tensor(input[:, :, 1:], dtype=torch.long, device=self.args.device)
+        if self.cfg.EMB_DIM != 0:
+            event_embedding = self.embedding(event_sequences)
+            event_embedding_dropout = self.dropout(event_embedding)
+            time_event_input = torch.cat((time_sequences, event_embedding_dropout), 2)
+        else:
+            event_one_hot = torch.zeros(event_sequences.shape[0], event_sequences.shape[1], self.cfg.EVENT_CLASSES,
+                                          dtype=torch.float, device=self.args.device).scatter_(2, event_sequences, 1.0)
+            time_event_input = torch.cat((time_sequences, event_one_hot), 2)
         time_event_input_packed = nn.utils.rnn.pack_padded_sequence(time_event_input, length, batch_first=True)
         h0 = torch.zeros(self.cfg.RNN_LAYERS, time_event_input.shape[0], self.cfg.RNN_HIDDEN_DIM,
                          dtype=torch.float, device=self.args.device, requires_grad=True)
@@ -29,10 +38,10 @@ class ERPP(nn.Module):
                          dtype=torch.float, device=self.args.device, requires_grad=True)
         output_packed, hidden = self.lstm(time_event_input_packed, (h0, c0))
         output, _ = nn.utils.rnn.pad_packed_sequence(output_packed, batch_first=True)
-        output = output[:, -1, :]
-        event_output = self.event_linear(output)
-        event_output = self.log_softmax(event_output)
-        time_output = self.time_linear(output)
+        output_mlp = torch.sigmoid(self.mlp(output[:, -1, :]))
+        event_output = self.event_linear(output_mlp)
+        event_output = F.log_softmax(event_output, dim=1)
+        time_output = self.time_linear(output_mlp)
         return time_output, event_output
 
 
@@ -56,4 +65,4 @@ class ERPPLoss(nn.Module):
         event_target = torch.tensor(target[:, 1], dtype=torch.long, device=self.args.device)
         time = self.time_loss(output[0], time_target)
         event = self.event_loss(output[1], event_target)
-        return time, event, time+event
+        return time, event, self.cfg.LOSS_ALPHA * time + event
