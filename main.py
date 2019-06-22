@@ -5,7 +5,8 @@ from config import ERPPConfigurator, AERPPConfigurator, RMTPPConfigurator, ARMTP
 import numpy as np
 from scipy import integrate
 import torch
-from utils.preprocess import load_sequences, dataset_statistic, generate_time_sequence, generate_event_sequence, generate_sequence
+from utils.statistic import dataset_statistic
+from utils.sequence_generator import load_sequences, generate_sequence
 from utils.batch_iterator import PaddedBatchIterator
 import models
 
@@ -258,12 +259,3 @@ def testing(cfg, args, extra_args):
 
 if __name__ == '__main__':
     main()
-
-# TODO:模型的保存和continue training
-# TODO:将configs分开
-
-'''
-Linkedin:
-ERPP 16.7% 1.20
-
-'''

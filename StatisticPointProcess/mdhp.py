@@ -7,7 +7,13 @@ class MDHawkesProcess(object):
         self.dim = dim
         self.beta = beta
 
-    def mle_full(self, sequences, T, max_iteration=5000, eps=1e-6, iteration_threshold=50, true_alpha=None):
+    def mle_full(self,
+                 sequences,
+                 T,
+                 max_iteration=5000,
+                 eps=1e-6,
+                 iteration_threshold=50,
+                 true_alpha=None):
         mu = np.random.rand(self.dim)
         alpha = np.random.rand(self.dim, self.dim)
         cnt = 0
@@ -19,7 +25,10 @@ class MDHawkesProcess(object):
                 for idx, item in enumerate(sequence):
                     p[idx, idx] = mu[item[1]]
                     for j in range(idx):
-                        p[idx, j] = alpha[item[1], sequence[j][1]] * self.beta * np.exp(-1 * self.beta * (item[0] - sequence[j][0]))
+                        p[idx, j] = alpha[item[1], sequence[j]
+                                          [1]] * self.beta * np.exp(
+                                              -1 * self.beta *
+                                              (item[0] - sequence[j][0]))
                     p[idx] /= p[idx].sum()
                 p_list.append(p)
 
@@ -30,17 +39,19 @@ class MDHawkesProcess(object):
             for c, sequence in enumerate(sequences):
                 for idx, item in enumerate(sequence):
                     next_mu[item[1]] += p_list[c][idx, idx]
-                    G[item[1]] += (1 - np.exp(-1 * self.beta * (T[c] - item[0])))
+                    G[item[1]] += (1 - np.exp(-1 * self.beta *
+                                              (T[c] - item[0])))
                     for j in range(idx):
-                        next_alpha[item[1], sequence[j][1]] += p_list[c][idx, j]
+                        next_alpha[item[1], sequence[j][1]] += p_list[c][idx,
+                                                                         j]
 
             next_mu /= T.sum()
             for d in range(self.dim):
                 if G[d] != 0:
                     next_alpha[:, d] = next_alpha[:, d] / G[d]
 
-            if ((np.abs(next_mu - mu).sum() + np.abs(next_alpha - alpha).sum()) / (
-                    self.dim * (self.dim + 1))) < eps:
+            if ((np.abs(next_mu - mu).sum() + np.abs(next_alpha - alpha).sum())
+                    / (self.dim * (self.dim + 1))) < eps:
                 cnt += 1
                 if cnt > iteration_threshold:
                     break
@@ -51,12 +62,23 @@ class MDHawkesProcess(object):
             alpha = next_alpha
 
             if true_alpha is not None and iteration % 10 == 9:
-                print("iteration %d: " % iteration, self.relErr(true_alpha, alpha))
+                print("iteration %d: " % iteration,
+                      self.relErr(true_alpha, alpha))
         return mu, alpha
 
-    def mle_lowrank_sparse(self, sequences, T, low_rank=True, sparse=True, max_admm_iteration=5000,
-                           max_mm_iteration=500, penalty_p=0.5, lamda1=0.02, lamda2=0.6, eps=1e-6,
-                           iteration_threshold=20, true_alpha=None):
+    def mle_lowrank_sparse(self,
+                           sequences,
+                           T,
+                           low_rank=True,
+                           sparse=True,
+                           max_admm_iteration=5000,
+                           max_mm_iteration=500,
+                           penalty_p=0.5,
+                           lamda1=0.02,
+                           lamda2=0.6,
+                           eps=1e-6,
+                           iteration_threshold=20,
+                           true_alpha=None):
         mu = np.random.rand(self.dim)
         alpha = np.random.rand(self.dim, self.dim)
 
@@ -89,11 +111,15 @@ class MDHawkesProcess(object):
             for mm_iteration in range(max_mm_iteration):
                 p_list = []
                 for sequence in sequences:
-                    p = np.zeros((len(sequence), len(sequence)), dtype=np.float64)
+                    p = np.zeros((len(sequence), len(sequence)),
+                                 dtype=np.float64)
                     for idx, item in enumerate(sequence):
                         p[idx, idx] = mu[item[1]]
                         for j in range(idx):
-                            p[idx, j] = alpha[item[1], sequence[j][1]] * self.beta * np.exp(-1 * self.beta * (item[0] - sequence[j][0]))
+                            p[idx, j] = alpha[item[1], sequence[j]
+                                              [1]] * self.beta * np.exp(
+                                                  -1 * self.beta *
+                                                  (item[0] - sequence[j][0]))
                         p[idx] /= p[idx].sum()
                     p_list.append(p)
 
@@ -108,14 +134,18 @@ class MDHawkesProcess(object):
                 next_mu = np.zeros(self.dim, dtype=np.float64)
                 for c, sequence in enumerate(sequences):
                     for idx, item in enumerate(sequence):
-                        B[:, item[1]] += (1 - np.exp(-1 * self.beta * (T[c] - item[0])))
+                        B[:, item[1]] += (1 - np.exp(-1 * self.beta *
+                                                     (T[c] - item[0])))
                         next_mu[item[1]] += p_list[c][idx][idx]
                         for j in range(idx):
                             C[item[1], sequence[j][1]] += p_list[c][idx][j]
                 next_mu /= T.sum()
-                next_alpha = (-B + np.sqrt(B ** 2 + 8 * penalty_p * C)) / (4 * penalty_p)
+                next_alpha = (-B + np.sqrt(B**2 + 8 * penalty_p * C)) / (
+                    4 * penalty_p)
 
-                if ((np.abs(next_mu - mu).sum() + np.abs(next_alpha - alpha).sum()) / (self.dim * (self.dim + 1))) < eps:
+                if ((np.abs(next_mu - mu).sum() +
+                     np.abs(next_alpha - alpha).sum()) /
+                    (self.dim * (self.dim + 1))) < eps:
                     cnt += 1
                     if cnt > iteration_threshold:
                         break
@@ -126,10 +156,11 @@ class MDHawkesProcess(object):
                 alpha = next_alpha
 
             if true_alpha is not None:
-                print("admm_iteration %d: " % admm_iteration, self.relErr(true_alpha, alpha))
+                print("admm_iteration %d: " % admm_iteration,
+                      self.relErr(true_alpha, alpha))
 
-            if ((np.abs(last_mu - mu).sum() + np.abs(last_alpha - alpha).sum()) / (
-                    self.dim * (self.dim + 1))) < eps:
+            if ((np.abs(last_mu - mu).sum() + np.abs(last_alpha - alpha).sum())
+                    / (self.dim * (self.dim + 1))) < eps:
                 admm_cnt += 1
                 if admm_cnt > iteration_threshold:
                     return mu, alpha
@@ -207,7 +238,8 @@ class MDHawkesProcess(object):
             for idx, item in enumerate(sequence):
                 if item[0] > t:
                     break
-                lams[d] += (alpha[d, item[1]] * np.exp(-1 * self.beta * (t - item[0])))
+                lams[d] += (alpha[d, item[1]] * np.exp(-1 * self.beta *
+                                                       (t - item[0])))
         return lams
 
     def relErr(self, alpha, p_alpha):
@@ -217,8 +249,9 @@ class MDHawkesProcess(object):
                 if alpha[idx][j] == 0:
                     error += (np.abs(alpha[idx][j] - p_alpha[idx][j]))
                 else:
-                    error += (np.abs(alpha[idx][j] - p_alpha[idx][j]) / np.abs(alpha[idx][j]))
-        return error / (self.dim ** 2)
+                    error += (np.abs(alpha[idx][j] - p_alpha[idx][j]) /
+                              np.abs(alpha[idx][j]))
+        return error / (self.dim**2)
 
 
 def set_parameters(dim, parameters_file=None):
@@ -250,7 +283,8 @@ def set_parameters(dim, parameters_file=None):
     return mu, alpha
 
 
-def generate_sequences(hawkes, sequences_file, N, mu, alpha, T, min_length, max_length):
+def generate_sequences(hawkes, sequences_file, N, mu, alpha, T, min_length,
+                       max_length):
     length = []
     with open(sequences_file, 'w') as fout:
         idx = 0
@@ -273,13 +307,16 @@ def train(hawkes, train_sequences_file, true_alpha=None):
         for line in fin.readlines():
             sequence = line.strip().split(',')
             T.append(float(sequence[-1].split()[0]) + 1)
-            sequence = [[float(item.split()[0]), int(item.split()[1])] for item in sequence]
+            sequence = [[float(item.split()[0]),
+                         int(item.split()[1])] for item in sequence]
             sequences.append(sequence)
     print('sequence length: ', len(sequences))
 
     T = np.array(T)
     # p_mu, p_alpha = hawkes.mle_full(sequences, T, true_alpha=true_alpha)
-    p_mu, p_alpha = hawkes.mle_lowrank_sparse(sequences, T, true_alpha=true_alpha)
+    p_mu, p_alpha = hawkes.mle_lowrank_sparse(sequences,
+                                              T,
+                                              true_alpha=true_alpha)
     print('p_mu: ', p_mu)
     print('p_alpha: ', p_alpha)
     return p_mu, p_alpha
@@ -292,8 +329,10 @@ def predict(hawkes, test_sequences_file, mu, alpha, predict_length=1):
     with open(test_sequences_file, 'r') as fin:
         for line in fin.readlines():
             sequence = line.strip().split(',')
-            sequence = [[float(item.split()[0]), int(item.split()[1])] for item in sequence]
-            result = hawkes.predict(mu, alpha, sequence[:-predict_length], predict_length)
+            sequence = [[float(item.split()[0]),
+                         int(item.split()[1])] for item in sequence]
+            result = hawkes.predict(mu, alpha, sequence[:-predict_length],
+                                    predict_length)
             cnt += predict_length
             for idx in range(1, predict_length + 1):
                 if result[-idx][1] == sequence[-idx][1]:
