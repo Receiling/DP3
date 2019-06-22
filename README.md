@@ -1,2 +1,2 @@
-# DeepPointProcess
-deep point process model using pytorch
+# DP3
+Deep Point Process by Pytorch
