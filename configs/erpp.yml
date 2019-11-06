@@ -1,0 +1,57 @@
+save_dir: ckpt/erpp
+best_model_path: ckpt/erpp/best_model
+last_model_path: ckpt/erpp/last_model
+train_model_dir: ckpt/erpp/batch
+
+dataset_name: ATM
+dataset_dir: ./data/real/ATM
+domain_dict:  {'id': 'id', 'timestamp': 'time', 'event': 'event'}
+csv_file: ATM_day.csv
+statistic_file: statistic.json
+event_interval_statistic_picture: event_interval_statistic.png
+event_index_file: event_index.json
+min_event_interval: 0.01
+min_length: 7
+max_length: 10
+train_rate: 0.7
+time_file: time.txt
+event_file: event.txt
+train_time_file: train_time.txt
+train_event_file: train_event.txt
+dev_time_file: dev_time.txt
+dev_event_file: dev_event.txt
+test_time_file: test_time.txt
+test_event_file: test_event.txt
+mark: 1
+diff: 1
+save_last_time: 0
+
+event_classes: 7
+embedding_dims: 0
+lstm_hidden_unit_dims: 32
+lstm_layers: 1
+attention_threshold: 0.01
+mlp_dims: 16
+dropout: 0.1
+loss_alpha: 0.05
+
+
+gradient_clipping: 1.0
+learning_rate: 1e-3
+adam_beta1: 0.9
+adam_beta2: 0.999
+adam_epsilon: 1e-6
+adam_weight_decay_rate: 0.0
+
+seed: 666
+epoches: 200
+early_stop: 50
+train_batch_size: 256
+gradient_accumulation_steps: 1
+test_batch_size: 256
+validate_every: 10
+device: 0
+root_log_level: DEBUG
+log_file: ckpt/erpp/erpp.log
+console_log_level: NOTSET
+file_log_level: NOTSET
