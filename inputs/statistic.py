@@ -1,5 +1,6 @@
-import pandas as pd
 import pickle
+
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -8,9 +9,9 @@ def dataset_statistic(csv_file, domain_dict, dataset_name, dataset_dir):
     """
         dataset statistic need csv file and domain_dict (describe each column of csv)
     """
-    dataset = pd.read_csv(csv_file, encoding='utf-8').sort_values(
-        by=[domain_dict['id'], domain_dict['timestamp']],
-        ascending=[True, True]).reset_index(drop=True)
+    dataset = pd.read_csv(
+        csv_file, encoding='utf-8').sort_values(by=[domain_dict['id'], domain_dict['timestamp']],
+                                                ascending=[True, True]).reset_index(drop=True)
     last_id = None
     last_timestamp = None
     sequences_length = {}
@@ -25,9 +26,8 @@ def dataset_statistic(csv_file, domain_dict, dataset_name, dataset_dir):
         if last_id is None or last_id != id:
             last_id = id
             if length != 0:
-                sequences_length[
-                    length] = 1 if length not in sequences_length.keys(
-                    ) else sequences_length[length] + 1
+                sequences_length[length] = 1 if length not in sequences_length.keys(
+                ) else sequences_length[length] + 1
                 event_length.append(length)
             length = 1
             last_timestamp = timestamp
@@ -43,22 +43,14 @@ def dataset_statistic(csv_file, domain_dict, dataset_name, dataset_dir):
     sequences_length[length] = 1 if length not in sequences_length.keys(
     ) else sequences_length[length] + 1
     event_interval = np.log10(np.array(event_interval))
-    plt.hist(event_interval,
-             bins=80,
-             facecolor='green',
-             edgecolor='black',
-             alpha=0.7)
+    plt.hist(event_interval, bins=80, facecolor='green', edgecolor='black', alpha=0.7)
     plt.xlabel('log event interval')
     plt.ylabel('number')
     # plt.grid(True)
     plt.savefig(dataset_dir + '/event_interval_statistic.png')
 
     event_length = np.log10(np.array(event_length))
-    plt.hist(event_length,
-             bins=20,
-             facecolor='green',
-             edgecolor='black',
-             alpha=0.7)
+    plt.hist(event_length, bins=20, facecolor='green', edgecolor='black', alpha=0.7)
     plt.xlabel('sequence length')
     plt.ylabel('number')
     plt.savefig(dataset_dir + '/sequence_length_statistic.png')
@@ -78,7 +70,6 @@ def dataset_statistic(csv_file, domain_dict, dataset_name, dataset_dir):
 
 if __name__ == '__main__':
     domain_dict = {'id': 'id', 'timestamp': 'time', 'event': 'event'}
-    dataset_statistic('../data/real/atm/atm_day.csv', domain_dict, 'atm',
-                      '../data/real/atm')
+    dataset_statistic('../data/real/atm/atm_day.csv', domain_dict, 'atm', '../data/real/atm')
     statistic_dict = pickle.load(open('../data/real/atm/statistic.json', 'rb'))
     print(len(statistic_dict['event_type_dict']))

@@ -1,7 +1,9 @@
+import time
+
 import pandas as pd
 import scipy
 from scipy import io
-import time
+import fire
 
 
 def scale_time(source_csv_file, target_csv_file, scale):
@@ -23,9 +25,7 @@ def mat2csv(mat_file, csv_file):
                     if len(data[k][1][idx].tolist()) != 0:
                         st = str(data[k][1][idx].tolist()[0])
                         st = '1' + st[1:]
-                        s += (str(
-                            time.mktime(time.strptime(
-                                st, "%Y-%m-%d %H:%M:%S"))) + ',')
+                        s += (str(time.mktime(time.strptime(st, "%Y-%m-%d %H:%M:%S"))) + ',')
                     else:
                         s += 'N,'
                     if len(data[k][0][idx].tolist()) != 0:
@@ -43,14 +43,16 @@ def csv_split(data, sequence_index, domain):
     from csv to txt, generate file for each field
     """
     for field_name, file_name in domain.items():
-        series = data.groupby(
-            sequence_index)[field_name].apply(lambda x: x.tolist())
+        series = data.groupby(sequence_index)[field_name].apply(lambda x: x.tolist())
         series_data = []
         for idx in series.index:
-            series_data.append(','.join(str(value)
-                                        for value in series[idx]) + '\n')
+            series_data.append(','.join(str(value) for value in series[idx]) + '\n')
         train_data_num = int(0.7 * len(series_data))
         with open(file_name + "-train.txt", 'w') as fout:
             fout.writelines(series_data[:train_data_num])
         with open(file_name + "-test.txt", 'w') as fout:
             fout.writelines(series_data[train_data_num:])
+
+
+if __name__ == "__main__":
+    fire.Fire({'scale_time': scale_time, 'mat2csv': mat2csv, 'csv_split': csv_split})
