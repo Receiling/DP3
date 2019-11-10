@@ -369,6 +369,19 @@ class ConfigurationParer():
                   type=int,
                   default=10,
                   help='Logging every N update steps.')
+        
+        self.parser.add('-model',
+                        '--model',
+                        type=str,
+                        choices=["ERPP", "RMTPP", "AERPP", "ARMTPP"],
+                        default="RMTPP",
+                        help='indicating using which model.')
+        self.parser.add('-mode',
+                        '--mode',
+                        type=int,
+                        choices=[0, 1, 2, 3],
+                        default=2,
+                        help='indicating mode(0: statistic, 1:preprocessing, 2: trianing, 3:testing).')
 
     def parse_args(self):
         """This function parses arguments and initializes logger
