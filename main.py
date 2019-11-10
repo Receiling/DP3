@@ -1,123 +1,131 @@
 import logging
-import argparse
+import random
+
 import ast
-from config import ERPPConfigurator, AERPPConfigurator, RMTPPConfigurator, ARMTPPConfigurator
 import numpy as np
 from scipy import integrate
 import torch
-from utils.statistic import dataset_statistic
-from utils.sequence_generator import load_sequences, generate_sequence
-from utils.batch_iterator import PaddedBatchIterator
+import fire
+
+from utils.argparse import ConfigurationParer
+from inputs.statistic import dataset_statistic
+from inputs.sequence_generator import load_sequences, generate_sequence
+from inputs.batch_iterator import PaddedBatchIterator
 import models
+
+logger = logging.getLogger(__name__)
 
 
 def main():
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument('--config_file', help='config file path')
-    argparser.add_argument('--continue_training', action='store_true', help='load models continue training')
-    argparser.add_argument('--model', help='ERPP, RMTPP, AERPP, ARMTPP')
-    argparser.add_argument('--gpu', default='-1', help='gpu id (-1 to cpu)')
-    argparser.add_argument('--mode', default='2', help='mode id(0: statistic, 1:preprocessing, 2: trianing, 3:testing)')
-    args, extra_args = argparser.parse_known_args()
+    # config settings
+    parser = ConfigurationParer()
+    parser.add_save_cfgs()
+    parser.add_data_cfgs()
+    parser.add_model_cfgs()
+    parser.add_optimizer_cfgs()
+    parser.add_run_cfgs()
 
-    cfg = None
-    if args.model == 'ERPP':
-        cfg = ERPPConfigurator(args.config_file, extra_args)
-    elif args.model == 'AERPP':
-        cfg = AERPPConfigurator(args.config_file, extra_args)
-    elif args.model == 'RMTPP':
-        cfg = RMTPPConfigurator(args.config_file, extra_args)
-    elif args.model == 'ARMTPP':
-        cfg = ARMTPPConfigurator(args.config_file, extra_args)
+    cfg = parser.parse_args()
+    logger.info(parser.format_values())
 
-    # TODO:loging module
-    #  设置log_file后记录所有训练输出
-    #  初步是log_file由modelname+datasetname+timestap构成
-    #  保证输出到日志同时打印到console
-    # logger = logging.getLogger(args.model)
-    # logger.setLevel(level=print)
-    # handler = logging.FileHandler(cfg.LOG_FILE)
-    # handler.setLevel(print)
-    # LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
-    # formatter = logging.Formatter(LOG_FORMAT)
-    # handler.setFormatter(formatter)
-    # console = logging.StreamHandler()
-    # console.setLevel(print)
-    # 
-    # logger.addHandler(handler)
-    # logger.addHandler(console)
+    # set random seed
+    random.seed(cfg.seed)
 
-    if args.mode == '0':
-        statistic(cfg, args, extra_args)
-    elif args.mode == '1':
-        preprocessing(cfg, args, extra_args)
-    elif args.mode == '2':
-        training(cfg, args, extra_args)
-    elif args.mode == '3':
-        testing(cfg, args, extra_args)
+    # mode
+    if cfg.mode == 0:
+        statistic(cfg)
+    elif cfg.mode == 1:
+        preprocessing(cfg)
+    elif cfg.mode == 2:
+        training(cfg)
+    elif cfg.mode == 3:
+        testing(cfg)
 
 
-def statistic(cfg, args, extra_args):
-    print('dataset statistic starting...')
-    domain_dict = ast.literal_eval(cfg.DOMAIN_DICT)
-    dataset_statistic(cfg.CSV_FILE, domain_dict, cfg.DATASET_NAME, cfg.DATASET_DIR)
-    print('dataset statistic finished.')
+def statistic(cfg):
+    print('Dataset statistic starting...')
+    domain_dict = ast.literal_eval(cfg.domain_dict)
+    dataset_statistic(cfg.csv_file, domain_dict, cfg.dataset_name, cfg.dataset_dir)
+    print('Dataset statistic finished.')
 
 
-def preprocessing(cfg, args, extra_args):
-    print('preprocessing starting...')
-    domain_dict = ast.literal_eval(cfg.DOMAIN_DICT)
+def preprocessing(cfg):
+    print('Preprocessing starting...')
+    domain_dict = ast.literal_eval(cfg.domain_dict)
     # generate_time_sequence(cfg.CSV_FILE, domain_dict, cfg.TIME_FILE,
     #                        cfg.TRAIN_TIME_FILE, cfg.DEV_TIME_FILE,
     #                        train_rate=cfg.TRAIN_RATE, min_length=cfg.MIN_LENGTH, max_length=cfg.MAX_LENGTH)
     # generate_event_sequence(cfg.CSV_FILE, domain_dict, cfg.EVENT_FILE, cfg.TRAIN_EVENT_FILE, cfg.DEV_EVENT_FILE,
     #                         cfg.EVENT_INDEX_FILE, train_rate=cfg.TRAIN_RATE,
     #                         min_length=cfg.MIN_LENGTH, max_length=cfg.MAX_LENGTH)
-    generate_sequence(cfg.CSV_FILE, domain_dict,
-                      cfg.TIME_FILE, cfg.TRAIN_TIME_FILE, cfg.DEV_TIME_FILE,
-                      cfg.EVENT_FILE, cfg.TRAIN_EVENT_FILE, cfg.DEV_EVENT_FILE,
-                      cfg.EVENT_INDEX_FILE, train_rate=cfg.TRAIN_RATE,
-                      min_length=cfg.MIN_LENGTH, max_length=cfg.MAX_LENGTH, min_event_interval=cfg.MIN_EVENT_INTERVAL)
-    print('preprocessing finished.')
+    generate_sequence(cfg.csv_file,
+                      domain_dict,
+                      cfg.time_file,
+                      cfg.train_time_file,
+                      cfg.dev_time_file,
+                      cfg.event_file,
+                      cfg.train_event_file,
+                      cfg.dev_event_file,
+                      cfg.event_index_file,
+                      train_rate=cfg.train_file,
+                      min_length=cfg.min_length,
+                      max_length=cfg.max_length,
+                      min_event_interval=cfg.min_event_interval)
+    print('Preprocessing finished.')
 
 
-def training(cfg, args, extra_args):
-    print('training starting...')
-    # pytorch setting
-    if torch.cuda.is_available() and args.gpu != '-1':
-        args.device = torch.device('cuda:' + str(args.gpu))
-    else:
-        args.device = torch.device('cpu')
-    torch.manual_seed(cfg.PYTORCH_SEED)
+def training(cfg):
+    print('Training starting...')
+
+    # pytorch seed
+    torch.manual_seed(cfg.seed)
+    np.random.seed(cfg.seed)
+    if cfg.device > -1 and not torch.cuda.is_available():
+        logger.error('config conflicts: no gpu available, use cpu for training.')
+        cfg.device = -1
+    if cfg.device > -1:
+        torch.cuda.manual_seed(cfg.seed)
 
     # load dataset
-    train_sequences = load_sequences(cfg.TRAIN_TIME_FILE, cfg.TRAIN_EVENT_FILE)
-    train_batch_iterator = PaddedBatchIterator(train_sequences, cfg.MARK, cfg.DIFF, cfg.SAVE_LAST_TIME)
-    dev_sequences = load_sequences(cfg.DEV_TIME_FILE, cfg.DEV_EVENT_FILE)
-    dev_batch_iterator = PaddedBatchIterator(dev_sequences, cfg.MARK, cfg.DIFF, cfg.SAVE_LAST_TIME)
+    train_sequences = load_sequences(cfg.train_time_file, cfg.train_event_file)
+    train_batch_iterator = PaddedBatchIterator(train_sequences, cfg.mark, cfg.diff,
+                                               cfg.save_last_time)
+    dev_sequences = load_sequences(cfg.dev_time_file, cfg.dev_event_file)
+    dev_batch_iterator = PaddedBatchIterator(dev_sequences, cfg.mark, cfg.diff, cfg.save_last_time)
 
-    # load model
-    # 1.直接重新初始化一个新的模型
-    # 2.continue training,载入上次训练的模型来继续训练
     # model
-    model = getattr(models, args.model)(cfg, args)
-    if args.continue_training:
-        checkpoint = torch.load(cfg.MODEL_FILE)
+    model = getattr(models, cfg.model)(cfg)
+    if cfg.continue_training:
+        checkpoint = torch.load(cfg.last_model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
     else:
-        model = model.to(args.device)
+        model = model.cuda(device=cfg.device)
 
     # citeration
-    citeration = getattr(models, args.model+'Loss')(cfg, args)
+    citeration = getattr(models, cfg.model + 'Loss')(cfg)
 
     # optimizer
-    # model_optimizer = torch.optim.Adam(model.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.ADAM_BETA1, cfg.ADAM_BETA2), weight_decay=cfg.WEIGHT_DECAY)
-    # citeration_optimizer = torch.optim.Adam(citeration.parameters(), lr=cfg.LEARNING_RATE, betas=(cfg.ADAM_BETA1, cfg.ADAM_BETA2), weight_decay=cfg.WEIGHT_DECAY)
-    model_optimizer = torch.optim.RMSprop(model.parameters(), lr=cfg.LEARNING_RATE, eps=cfg.EPS)
+    # model_optimizer = torch.optim.Adam(model.parameters(),
+    #                                    lr=cfg.learning_rate,
+    #                                    betas=(cfg.adam_beta1, cfg.adam_beta2),
+    #                                    weight_decay=cfg.weight_decay)
+    # citeration_optimizer = torch.optim.Adam(citeration.parameters(),
+    #                                         lr=cfg.learning_rate,
+    #                                         betas=(cfg.adam_beta1, cfg.adam_beta2),
+    #                                         weight_decay=cfg.weight_decay)
+
+    model_optimizer = torch.optim.RMSprop(model.parameters(),
+                                          lr=cfg.learning_rate,
+                                          eps=cfg.adam_epsilon)
     model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer, step_size=30, gamma=0.1)
-    if cfg.SAVE_LAST_TIME:
-        citeration_optimizer = torch.optim.RMSprop(citeration.parameters(), lr=cfg.LEARNING_RATE, eps=cfg.EPS)
-        citeration_scheduler = torch.optim.lr_scheduler.StepLR(citeration_optimizer, step_size=30, gamma=0.1)
+
+    if cfg.save_last_time:
+        citeration_optimizer = torch.optim.RMSprop(citeration.parameters(),
+                                                   lr=cfg.learning_rate,
+                                                   eps=cfg.adam_epsilon)
+        citeration_scheduler = torch.optim.lr_scheduler.StepLR(citeration_optimizer,
+                                                               step_size=30,
+                                                               gamma=0.1)
 
     # meters
     loss_meter = []
@@ -128,25 +136,30 @@ def training(cfg, args, extra_args):
     min_time_loss = None
     epoch_cnt = 0
 
-    for epoch in range(cfg.EPOCHS):
+    for epoch in range(cfg.epoches):
         model.train()
         model_scheduler.step()
-        if cfg.SAVE_LAST_TIME: citeration_scheduler.step()
+        if cfg.save_last_time:
+            citeration_scheduler.step()
         train_batch_iterator.shuffle()
         batch_id = 1
         while True:
-            end, input, target, last_time, length = train_batch_iterator.next_batch(cfg.TRAIN_BATCH_SIZE)
+            end, input, target, last_time, length = train_batch_iterator.next_batch(
+                cfg.train_batch_size)
             model_optimizer.zero_grad()
-            if cfg.SAVE_LAST_TIME: citeration_optimizer.zero_grad()
+            if cfg.save_last_time:
+                citeration_optimizer.zero_grad()
             output = model.forward(input, length)
             batch_loss = citeration(output, target)
             loss_meter.append(batch_loss[2].item())
             batch_loss[2].backward()
             model_optimizer.step()
-            if cfg.SAVE_LAST_TIME: citeration_optimizer.step()
-            if batch_id % cfg.TRAIN_PRINT_FREQ == 0:
+            if cfg.save_last_time:
+                citeration_optimizer.step()
+            if batch_id % cfg.validate_every == 0:
                 print("epoch: %d\tbatch_id:%d\tloss:%f\ttime loss: %f\tevent loss: %f" %
-                             (epoch, batch_id, np.array(loss_meter).mean(), batch_loss[0].item(), batch_loss[1].item()))
+                      (epoch, batch_id, np.array(loss_meter).mean(), batch_loss[0].item(),
+                       batch_loss[1].item()))
                 loss_meter = []
             batch_id += 1
             if end: break
@@ -154,13 +167,14 @@ def training(cfg, args, extra_args):
         model.eval()
         with torch.no_grad():
             event_total = 0
-            all_cnt = np.zeros(cfg.EVENT_CLASSES)
-            acc_cnt = np.zeros(cfg.EVENT_CLASSES)
-            pre_cnt = np.zeros(cfg.EVENT_CLASSES)
+            all_cnt = np.zeros(cfg.event_classes)
+            acc_cnt = np.zeros(cfg.event_classes)
+            pre_cnt = np.zeros(cfg.event_classes)
             time_error = 0
             dev_batch_iterator.shuffle()
             while True:
-                end, input, target, last_time, length = dev_batch_iterator.next_batch(cfg.DEV_BATCH_SIZE)
+                end, input, target, last_time, length = dev_batch_iterator.next_batch(
+                    cfg.test_batch_size)
                 output = model.forward(input, length)
                 event_total += length.shape[0]
 
@@ -178,36 +192,41 @@ def training(cfg, args, extra_args):
                     time_target = target[:, 0]
                     time_error += np.abs(time_output - time_target).sum()
                 else:
-                    time_target = target[:,  0]
+                    time_target = target[:, 0]
                     history_event = output[0].squeeze().cpu().numpy()
                     intensity_w = citeration.intensity_w.cpu().data.numpy()
                     intensity_b = citeration.intensity_b.cpu().data.numpy()
-                    next_time = np.array([integrate.quad(lambda t: (t + last_time[idx]) * np.exp(history_event[idx] +
-                                intensity_w * t + intensity_b + (np.exp(history_event[idx] + intensity_b) -
-                                np.exp(history_event[idx] + intensity_w * t + intensity_b)) / intensity_w), 0, np.inf)[0]
-                                 for idx in range(history_event.shape[0])])
+                    next_time = np.array([
+                        integrate.quad(
+                            lambda t: (t + last_time[idx]) * np.
+                            exp(history_event[idx] + intensity_w * t + intensity_b +
+                                (np.exp(history_event[idx] + intensity_b) - np.exp(history_event[
+                                    idx] + intensity_w * t + intensity_b)) / intensity_w), 0,
+                            np.inf)[0] for idx in range(history_event.shape[0])
+                    ])
                     time_error += np.abs(next_time - last_time - time_target).sum()
-                if end: break
+                if end:
+                    break
             print(acc_cnt, acc_cnt.sum())
             print(pre_cnt, pre_cnt.sum())
             print(all_cnt, all_cnt.sum())
             cnt = 0
             score = 0.0
-            for idx in range(cfg.EVENT_CLASSES):
+            for idx in range(cfg.event_classes):
                 if all_cnt[idx] != 0:
                     cnt += 1
                     score += acc_cnt[idx] / all_cnt[idx]
             event_recall = score / cnt
             cnt = 0
             score = 0.0
-            for idx in range(cfg.EVENT_CLASSES):
+            for idx in range(cfg.event_classes):
                 if pre_cnt[idx] != 0:
                     cnt += 1
                     score += acc_cnt[idx] / pre_cnt[idx]
             event_precision = score / cnt
             cnt = 0
             score = 0.0
-            for idx in range(cfg.EVENT_CLASSES):
+            for idx in range(cfg.event_classes):
                 if all_cnt[idx] != 0 and pre_cnt[idx] != 0:
                     cnt += 1
                     precision = acc_cnt[idx] / pre_cnt[idx]
@@ -217,11 +236,18 @@ def training(cfg, args, extra_args):
             event_acc = acc_cnt.sum() / all_cnt.sum()
             print("epoch: %d\tevent_recall: %f\tevent_precision: %f\tevent_f1: %f\ttime_error: %f" %
                   (epoch, event_recall, event_precision, event_f1, time_error / event_total))
-            print("-------------------------------------------------------------------------------------")
+            print(
+                "-------------------------------------------------------------------------------------"
+            )
 
             if max_event_f1 is None or event_f1 > max_event_f1:
                 max_event_f1 = event_f1
-                best_model = {'epoch': epoch, 'precision': event_precision, 'recall': event_recall, 'f1': event_f1}
+                best_model = {
+                    'epoch': epoch,
+                    'precision': event_precision,
+                    'recall': event_recall,
+                    'f1': event_f1
+                }
                 epoch_cnt = 0
                 # torch.save({'epoch': epoch,
                 #             'model_state_dict': model.state_dict(),
@@ -243,7 +269,7 @@ def training(cfg, args, extra_args):
             if max_event_acc is None or event_acc > max_event_acc:
                 max_event_acc = event_acc
 
-            if epoch_cnt > cfg.EPOCH_THRESHOLD:
+            if epoch_cnt > cfg.early_stop:
                 break
 
     print('best model:', best_model)
@@ -252,7 +278,7 @@ def training(cfg, args, extra_args):
     print('training finished.')
 
 
-def testing(cfg, args, extra_args):
+def testing(cfg):
     print('testing starting...')
     print('testing finished.')
 
